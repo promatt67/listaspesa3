@@ -7,7 +7,7 @@ const EMAIL_AUTORIZZATE = [
 
 const auth = firebase.auth();
 const db   = firebase.database();
-const ref  = db.ref("prodotti");
+const prodottiRef = db.ref("prodotti");
 
 const CATEGORIE_ORDER = [
     "Frutta e Verdura","Carne e Pesce","Latticini","Pane e Dolci",
@@ -51,11 +51,8 @@ auth.onAuthStateChanged(user => {
     }
 });
 
-let listenerAttivo = false;
 function avviaListener() {
-    if (listenerAttivo) return;
-    listenerAttivo = true;
-    ref.orderByChild("timestamp").on("value",
+    prodottiRef.on("value",
         snapshot => {
             const prodotti = [];
             snapshot.forEach(child => prodotti.push({ id: child.key, ...child.val() }));
@@ -127,7 +124,7 @@ async function aggiungiProdotto() {
     const btn = document.getElementById("btn-aggiungi");
     btn.disabled = true; btn.textContent = "Salvataggio…";
     try {
-        await ref.push({ nome, quantita, ubicazione, categoria, acquistato: false, timestamp: Date.now() });
+        await prodottiRef.push({ nome, quantita, ubicazione, categoria, acquistato: false, timestamp: Date.now() });
         document.getElementById("nome").value = "";
         document.getElementById("quantita").value = "";
         document.getElementById("ubicazione").value = "";
