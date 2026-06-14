@@ -19,6 +19,8 @@ const CAT_EMOJI = {
     "Igiene Personale":"🧴","Altro":"📦"
 };
 
+const STORAGE_KEY = "lista_spesa_cache";
+
 function loginGoogle() {
     auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
         .catch(() => {
@@ -26,63 +28,71 @@ function loginGoogle() {
         });
 }
 
-function logout() { 
+function logout() {
     prodottiRef.off();
-    auth.signOut(); 
+    auth.signOut();
 }
 
-// Spostiamo il listener in una funzione pulita che possiamo chiamare in sicurezza
-function avviaSincronizzazioneProdotti() {
-    prodottiRef.off(); // Evita doppie attivazioni strambe
-    prodottiRef.on("value",
-        snapshot => {
-            const prodotti = [];
-            snapshot.forEach(child => {
-                const val = child.val();
-                if (!val.categoria || !CATEGORIE_ORDER.includes(val.categoria)) {
-                    val.categoria = "Altro";
-                }
-                prodotti.push({ id: child.key, ...val });
-            });
-            prodotti.sort((a, b) => {
-                if (a.acquistato !== b.acquistato) return a.acquistato ? 1 : -1;
-                return (a.timestamp || 0) - (b.timestamp || 0);
-            });
+// Mostra subito i dati salvati in cache (anche offline)
+function mostraCacheLocale() {
+    try {
+        const cache = localStorage.getItem(STORAGE_KEY);
+        if (cache) {
+            const prodotti = JSON.parse(cache);
             renderTabella(prodotti);
-        },
-        err => console.error("DB errore:", err.message)
-    );
+        }
+    } catch (e) {}
 }
 
-// Controllo di accesso corretto e tollerante alla modalità offline
+// Salva i dati per uso offline
+function salvaCacheLocale(prodotti) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(prodotti));
+    } catch (e) {}
+}
+
 auth.onAuthStateChanged(user => {
     const loginScreen = document.getElementById("login-screen");
     const appScreen   = document.getElementById("app-screen");
     const loginError  = document.getElementById("login-error");
 
-    // Sblocca lo schermo se l'utente è loggato localmente (anche se Google Auth è offline)
-    if (user || auth.currentUser) {
-        const currentUser = user || auth.currentUser;
-        
-        if (currentUser.email && !EMAIL_AUTORIZZATE.includes(currentUser.email)) {
+    if (user) {
+        if (!EMAIL_AUTORIZZATE.includes(user.email)) {
             loginError.textContent = "⛔ Account non autorizzato.";
             auth.signOut();
             return;
         }
-        
         loginScreen.style.display = "none";
         appScreen.style.display   = "block";
-        document.getElementById("user-name").textContent = currentUser.displayName || currentUser.email;
-        
+        document.getElementById("user-name").textContent = user.displayName || user.email;
         const photo = document.getElementById("user-photo");
-        if (currentUser.photoURL) { 
-            photo.src = currentUser.photoURL; 
-            photo.style.display = "inline"; 
-        }
-        
-        // Carica i dati (dalla cache se offline, da internet se online)
-        avviaSincronizzazioneProdotti();
+        if (user.photoURL) { photo.src = user.photoURL; photo.style.display = "inline"; }
+
+        // Mostra subito la cache locale (utile se offline)
+        mostraCacheLocale();
+
+        prodottiRef.off();
+        prodottiRef.on("value",
+            snapshot => {
+                const prodotti = [];
+                snapshot.forEach(child => {
+                    const val = child.val();
+                    if (!val.categoria || !CATEGORIE_ORDER.includes(val.categoria)) {
+                        val.categoria = "Altro";
+                    }
+                    prodotti.push({ id: child.key, ...val });
+                });
+                prodotti.sort((a, b) => {
+                    if (a.acquistato !== b.acquistato) return a.acquistato ? 1 : -1;
+                    return (a.timestamp || 0) - (b.timestamp || 0);
+                });
+                renderTabella(prodotti);
+                salvaCacheLocale(prodotti);
+            },
+            err => console.error("Errore DB:", err.message)
+        );
     } else {
+        prodottiRef.off();
         loginScreen.style.display = "flex";
         appScreen.style.display   = "none";
     }
@@ -111,7 +121,11 @@ function renderTabella(prodotti) {
     if (counter) counter.innerHTML = `<span>${acquistati}</span> / ${prodotti.length} acquistati`;
     const gruppi = {};
     CATEGORIE_ORDER.forEach(c => gruppi[c] = []);
-    prodotti.forEach(p => gruppi[p.categoria].push(p));
+    prodotti.forEach(p => {
+        const cat = p.categoria || "Altro";
+        if (!gruppi[cat]) gruppi[cat] = [];
+        gruppi[cat].push(p);
+    });
     let html = "";
     CATEGORIE_ORDER.forEach(cat => {
         const items = gruppi[cat];
@@ -131,46 +145,42 @@ function renderTabella(prodotti) {
     tbody.innerHTML = html;
 }
 
-// Funzioni di scrittura asincrone ottimizzate per salvare all'istante in cache locale
-function aggiungiProdotto() {
+async function aggiungiProdotto() {
     const nome       = document.getElementById("nome").value.trim();
     const quantita   = parseInt(document.getElementById("quantita").value);
     const ubicazione = document.getElementById("ubicazione").value.trim();
     const categoria  = document.getElementById("categoria").value;
-    
     if (!nome || !ubicazione || isNaN(quantita) || quantita < 1) {
         setStatus("⚠️ Compila tutti i campi.", true); return;
     }
-    
     const btn = document.getElementById("btn-aggiungi");
     btn.disabled = true; btn.textContent = "Salvataggio…";
-    
-    prodottiRef.push({ nome, quantita, ubicazione, categoria, acquistato: false, timestamp: Date.now() })
-        .then(() => {
-            setStatus("✅ Prodotto aggiunto!");
-            setTimeout(() => setStatus(""), 2500);
-        })
-        .catch(err => setStatus("❌ Errore: " + err.message, true));
-
-    document.getElementById("nome").value = "";
-    document.getElementById("quantita").value = "";
-    document.getElementById("ubicazione").value = "";
-    btn.disabled = false; btn.textContent = "Aggiungi Prodotto";
+    try {
+        await prodottiRef.push({ nome, quantita, ubicazione, categoria, acquistato: false, timestamp: Date.now() });
+        document.getElementById("nome").value = "";
+        document.getElementById("quantita").value = "";
+        document.getElementById("ubicazione").value = "";
+        setStatus("✅ Prodotto aggiunto!");
+        setTimeout(() => setStatus(""), 2500);
+    } catch (err) {
+        setStatus("❌ Errore: " + err.message, true);
+    } finally {
+        btn.disabled = false; btn.textContent = "Aggiungi Prodotto";
+    }
 }
 
-function toggleAcquistato(id, stato) {
-    db.ref("prodotti/" + id).update({ acquistato: !stato })
-        .catch(err => setStatus("❌ Errore.", true));
+async function toggleAcquistato(id, stato) {
+    try { await db.ref("prodotti/" + id).update({ acquistato: !stato }); }
+    catch (err) { setStatus("❌ Errore.", true); }
 }
 
-function eliminaProdotto(id) {
+async function eliminaProdotto(id) {
     if (!confirm("Eliminare?")) return;
-    db.ref("prodotti/" + id).remove()
-        .then(() => {
-            setStatus("🗑️ Eliminato.");
-            setTimeout(() => setStatus(""), 2000);
-        })
-        .catch(err => setStatus("❌ Errore.", true));
+    try {
+        await db.ref("prodotti/" + id).remove();
+        setStatus("🗑️ Eliminato.");
+        setTimeout(() => setStatus(""), 2000);
+    } catch (err) { setStatus("❌ Errore.", true); }
 }
 
 document.addEventListener("keydown", e => { if (e.key === "Enter") aggiungiProdotto(); });
