@@ -159,21 +159,16 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
-  const firebaseConfig = {
-    apiKey:            "AIzaSyA8ZSV0GCXcWkvZ48ejny74MYtVYvECF6s",
-    authDomain:        "listaspesa-491f3.firebaseapp.com",
-    databaseURL:       "https://listaspesa-491f3-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId:         "listaspesa-491f3",
-    storageBucket:     "listaspesa-491f3.firebasestorage.app",
-    messagingSenderId: "63200490567",
-    appId:             "1:63200490567:web:5aa6da942a28e5a2a96d62"
-  };
-  firebase.initializeApp(firebaseConfig);
-
-  // 2. ATTIVA LA PERSISTENZA OFFLINE AUTOMATICA (Aggiungi questa riga qui sotto!)
-  firebase.database().enablePersistence().catch(function(err) {
-      console.log("Impossibile attivare la persistenza offline:", err.code);
-  }); 
+ const firebaseConfig = {
+  apiKey: "AIzaSyA8ZSV0GCXcWkvZ48ejny74MYtVYvECF6s",
+  authDomain: "listaspesa-491f3.firebaseapp.com",
+  databaseURL: "https://listaspesa-491f3-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "listaspesa-491f3",
+  storageBucket: "listaspesa-491f3.firebasestorage.app",
+  messagingSenderId: "63200490567",
+  appId: "1:63200490567:web:5aa6da942a28e5a2a96d62"
+};
+firebase.initializeApp(firebaseConfig);
 </script>
 <script src="app.js"></script>
 </body>
