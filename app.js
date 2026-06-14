@@ -31,8 +31,9 @@ function logout() {
     auth.signOut(); 
 }
 
-// 1. FUNZIONE PER ATTIVARE IL LISTENER DEI PRODOTTI (Ottimizzata Offline)
-function avviaListenerProdotti() {
+// Spostiamo il listener in una funzione pulita che possiamo chiamare in sicurezza
+function avviaSincronizzazioneProdotti() {
+    prodottiRef.off(); // Evita doppie attivazioni strambe
     prodottiRef.on("value",
         snapshot => {
             const prodotti = [];
@@ -49,43 +50,41 @@ function avviaListenerProdotti() {
             });
             renderTabella(prodotti);
         },
-        err => {
-            console.error("DB errore:", err.message);
-            setStatus("⚠️ Modalità offline attiva (dati locali)", false);
-        }
+        err => console.error("DB errore:", err.message)
     );
 }
 
-// 2. GESTIONE ACCESSO OTTIMIZZATA PER L'OFFLINE
+// Controllo di accesso corretto e tollerante alla modalità offline
 auth.onAuthStateChanged(user => {
     const loginScreen = document.getElementById("login-screen");
     const appScreen   = document.getElementById("app-screen");
     const loginError  = document.getElementById("login-error");
 
-    if (user) {
-        if (user.email && !EMAIL_AUTORIZZATE.includes(user.email)) {
+    // Sblocca lo schermo se l'utente è loggato localmente (anche se Google Auth è offline)
+    if (user || auth.currentUser) {
+        const currentUser = user || auth.currentUser;
+        
+        if (currentUser.email && !EMAIL_AUTORIZZATE.includes(currentUser.email)) {
             loginError.textContent = "⛔ Account non autorizzato.";
             auth.signOut();
             return;
         }
+        
         loginScreen.style.display = "none";
         appScreen.style.display   = "block";
-        document.getElementById("user-name").textContent = user.displayName || user.email;
-        const photo = document.getElementById("user-photo");
-        if (user.photoURL) { photo.src = user.photoURL; photo.style.display = "inline"; }
+        document.getElementById("user-name").textContent = currentUser.displayName || currentUser.email;
         
-        // Avvia i prodotti se siamo online
-        avviaListenerProdotti();
-    } else {
-        // Se manca internet controlliamo se c'era già un utente loggato in cache
-        if (auth.currentUser) {
-            loginScreen.style.display = "none";
-            appScreen.style.display   = "block";
-            avviaListenerProdotti();
-        } else {
-            loginScreen.style.display = "flex";
-            appScreen.style.display   = "none";
+        const photo = document.getElementById("user-photo");
+        if (currentUser.photoURL) { 
+            photo.src = currentUser.photoURL; 
+            photo.style.display = "inline"; 
         }
+        
+        // Carica i dati (dalla cache se offline, da internet se online)
+        avviaSincronizzazioneProdotti();
+    } else {
+        loginScreen.style.display = "flex";
+        appScreen.style.display   = "none";
     }
 });
 
@@ -132,54 +131,46 @@ function renderTabella(prodotti) {
     tbody.innerHTML = html;
 }
 
-// 3. FUNZIONI DI SCRITTURA OTTIMIZZATE (SENZA AWAIT PER FUNZIONARE OFFLINE)
+// Funzioni di scrittura asincrone ottimizzate per salvare all'istante in cache locale
 function aggiungiProdotto() {
     const nome       = document.getElementById("nome").value.trim();
     const quantita   = parseInt(document.getElementById("quantita").value);
     const ubicazione = document.getElementById("ubicazione").value.trim();
     const categoria  = document.getElementById("categoria").value;
-
+    
     if (!nome || !ubicazione || isNaN(quantita) || quantita < 1) {
         setStatus("⚠️ Compila tutti i campi.", true); return;
     }
-
+    
     const btn = document.getElementById("btn-aggiungi");
     btn.disabled = true; btn.textContent = "Salvataggio…";
-
-    prodottiRef.push({ 
-        nome, 
-        quantita, 
-        ubicazione, 
-        categoria, 
-        acquistato: false, 
-        timestamp: Date.now() 
-    }).then(() => {
-        setStatus("✅ Prodotto aggiunto!");
-        setTimeout(() => setStatus(""), 2500);
-    }).catch((err) => {
-        setStatus("❌ Errore: " + err.message, true);
-    });
+    
+    prodottiRef.push({ nome, quantita, ubicazione, categoria, acquistato: false, timestamp: Date.now() })
+        .then(() => {
+            setStatus("✅ Prodotto aggiunto!");
+            setTimeout(() => setStatus(""), 2500);
+        })
+        .catch(err => setStatus("❌ Errore: " + err.message, true));
 
     document.getElementById("nome").value = "";
     document.getElementById("quantita").value = "";
     document.getElementById("ubicazione").value = "";
-    btn.disabled = false; 
-    btn.textContent = "Aggiungi Prodotto";
+    btn.disabled = false; btn.textContent = "Aggiungi Prodotto";
 }
 
 function toggleAcquistato(id, stato) {
     db.ref("prodotti/" + id).update({ acquistato: !stato })
-      .catch(err => setStatus("❌ Errore aggiornamento.", true));
+        .catch(err => setStatus("❌ Errore.", true));
 }
 
 function eliminaProdotto(id) {
     if (!confirm("Eliminare?")) return;
     db.ref("prodotti/" + id).remove()
-      .then(() => {
-          setStatus("🗑️ Eliminato.");
-          setTimeout(() => setStatus(""), 2000);
-      })
-      .catch(err => setStatus("❌ Errore eliminazione.", true));
+        .then(() => {
+            setStatus("🗑️ Eliminato.");
+            setTimeout(() => setStatus(""), 2000);
+        })
+        .catch(err => setStatus("❌ Errore.", true));
 }
 
 document.addEventListener("keydown", e => { if (e.key === "Enter") aggiungiProdotto(); });
