@@ -7,7 +7,6 @@ const EMAIL_AUTORIZZATE = [
 
 const auth = firebase.auth();
 const db   = firebase.database();
-db.ref().keepSynced(true);
 const prodottiRef = db.ref("prodotti");
 
 const CATEGORIE_ORDER = [
